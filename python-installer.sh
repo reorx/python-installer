@@ -44,8 +44,10 @@ sudo apt-get build-dep python2.7
 ## lib-devs
 
 echo_blue "Checking lib-devs"
+
 LIBDEVS=(
-python-dev
+libpython2.7-dev
+python2.7-dev
 libncurses5-dev
 libsqlite3-dev
 libbz2-dev
@@ -58,10 +60,14 @@ libexpat1-dev
 libreadline6-dev
 )
 
+function is_installed() {
+    echo $(apt-cache policy $1 | grep "Installed: (none)")
+}
+
 LIBDEVS_INSTALLS=""
 for i in ${LIBDEVS[@]}; do
-    greped=$( apt-cache policy $i | grep "Installed: (none)")
-    if [ -n "$greped" ]; then
+    #greped=$( apt-cache policy $i | grep "Installed: (none)")
+    if [ -n "$(is_installed $i)" ]; then
         if [ ! -n "$NEEDINSTALL" ]; then
             LIBDEVS_INSTALLS=$i
         else
@@ -73,32 +79,61 @@ echo "Following libraries wiil be installed: $LIBDEVS_INSTALLS"
 
 sudo apt-get install $LIBDEVS_INSTALLS
 
-# Install additional dependences for commonly used packages like lxml, MySQLdb
-echo -n -e "${MARK_BLUE}Install additional lib-dev packages for lxml?${MARK_NC}"
-read CONFIRM
-if [[ $CONFIRM =~ ^[Yy]$ || ! $CONFIRM ]]; then
-    sudo apt-get install libxml2-dev libxslt1-dev
-fi
 
-echo -n -e "${MARK_BLUE}Install additional lib-dev packages for MySQLdb?${MARK_NC}"
-read CONFIRM
-if [[ $CONFIRM =~ ^[Yy]$ || ! $CONFIRM ]]; then
-    sudo apt-get install libmysqlclient-dev
-fi
+function install_if_not() {
+    packages=$2
+    all_installed=true
+    for i in ${packages[@]}; do
+        if [ -n "$(is_installed $i)" ]; then
+            all_installed=false
+        fi
+    done;
+    if ! $all_installed; then
+        echo -n -e "${MARK_BLUE}Install additional lib-dev packages for $1?${MARK_NC}"
+        read _confirm
+        if [[ $_confirm =~ ^[Yy]$ || ! $_confirm ]]; then
+            sudo apt-get install "$packages"
+        fi
+    fi
+}
+
+## Install additional dependences for commonly used packages like lxml, MySQLdb
+echo_blue "Check additional dependences"
+
+install_if_not "lxml" "libxml2-dev libxslt1-dev"
+
+install_if_not "MySQLdb" "libmysqlclient-dev"
 
 # Choose installation folder
 echo_blue "Choose installation folder"
 
+# Absolute path for both file and directory
+function abspath() {
+    if [ -d $1 ]; then
+        echo "$(cd $1; pwd)"
+    else
+        echo "$(cd $(dirname $1); pwd)/$(basename $1)"
+    fi
+}
+
+# Get real path from tilde mark prefixed path
+function realpath() {
+    eval _path="$1"
+    echo $_path
+}
+
 function get_deploy_path() {
     read DEPLOY
+    DEPLOY=$(realpath $DEPLOY)
+    echo "Use path: $DEPLOY"
     if [[ -d "$DEPLOY" && "$(ls -A $DEPLOY)" ]]; then
         echo_red 'Not an empty folder'
         get_deploy_path
     fi
     if [ ! -d "$DEPLOY" ]; then
         echo -n -e "${MARK_BLUE}Folder not exists, create?[y/n]${MARK_NC}"
-        read CONFIRM
-        if [[ $CONFIRM =~ ^[Yy]$ || ! $CONFIRM ]]; then
+        read _confirm
+        if [[ $_confirm =~ ^[Yy]$ || ! $_confirm ]]; then
             mkdir -p $DEPLOY
         else
             get_deploy_path
@@ -107,34 +142,55 @@ function get_deploy_path() {
 }
 get_deploy_path
 
-echo $DEPLOY
+#echo $DEPLOY
 
-exit
 
 # Download & decompress
 echo_blue "Start downloading Python $PYVERSION"
 
-wget http://python.org/ftp/python/2.7.X/Python-2.7.X.tgz
+SRC_FILE="Python-$PYVERSION.tgz"
+SRC_DIR="Python-$PYVERSION"
 
-# Configure
+#wget -P /tmp "http://python.org/ftp/python/$PYVERSION/$SRC_FILE"
+
+cp ~/Downloads/Python-2.7.5.tgz /tmp
+
+tar xzf /tmp/$SRC_FILE -C /tmp
+
+#}}} working in /tmp/$SRC_DIR
+pushd "/tmp/$SRC_DIR"
+
+echo -n -e "${MARK_BLUE}Would you like to show outputs of configure, make, make install?[y/n]${MARK_NC}"
+read _confirm
+if [[ $_confirm =~ ^[Yy]$ || ! $_confirm ]]; then
+    SHOW_OUTPUT=true
+else
+    SHOW_OUTPUT=false
+fi
 
 ./configure --prefix=$DEPLOY
-
-# Make
 
 make
 
 # Check make result, make sure essential packages are able to be installed
-
-
-# Make install
+echo -n -e "${MARK_BLUE}Please take a look at the last output of make, to decide whether to going on or stop to install necessary packages?${MARK_NC}"
+read _confirm
+if [[ ! $_confirm =~ ^[Yy]$ && $_confirm ]]; then
+    exit
+fi
 
 make install
+
+popd
+#{{{ end working in /tmp/$SRC_DIR
+
 
 # Check install result
 
 export PATH=$DEPLOY/bin:$PATH
 which python
+
+exit
 
 # Install setuptools & pip
 wget https://bitbucket.org/pypa/setuptools/raw/0.8/ez_setup.py -O - | python
