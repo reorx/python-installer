@@ -141,20 +141,27 @@ function realpath() {
 function get_deploy_path() {
     echo_color -n blue "Choose installation folder: "
     read DEPLOY
+    if [ ! $DEPLOY ]; then
+        get_deploy_path
+        return 0
+    fi
     DEPLOY=$(realpath $DEPLOY)
     if [ $(dirname $DEPLOY) == "." ]; then
         echo_color red 'Please input an absolute path'
         get_deploy_path
+        return 0
     fi
     if [[ -d "$DEPLOY" && "$(ls -A $DEPLOY)" ]]; then
         echo_color red 'Not an empty folder'
         get_deploy_path
+        return 0
     fi
     if [ ! -d "$DEPLOY" ]; then
         if (confirm -s "Folder not exists, create?"); then
             mkdir -p $DEPLOY
         else
             get_deploy_path
+            return 0
         fi
     fi
     echo "Use path: $DEPLOY"
@@ -274,7 +281,7 @@ function step_download() {
     local confirm_download
 
     if [ -e "$download_path" ]; then
-        if (confirm "File $download_path exists, do you still want to download"); then
+        if (confirm -s "File $download_path exists, do you still want to download"); then
             confirm_download="True"
         fi
     else
@@ -444,7 +451,7 @@ function process_steps() {
     # Step 1.
     if (($step < 2)); then
         step_sys_info
-        if $single; then
+        if [ $single ]; then
             return 0
         fi
     fi
@@ -452,7 +459,7 @@ function process_steps() {
     # Step 2.
     if (($step < 3)); then
         step_install_dep
-        if $single; then
+        if [ $single ]; then
             return 0
         fi
     fi
@@ -460,7 +467,7 @@ function process_steps() {
     # Step 3.
     if (($step < 4)); then
         step_download
-        if $single; then
+        if [ $single ]; then
             return 0
         fi
     fi
@@ -468,7 +475,7 @@ function process_steps() {
     # Step 4.
     if (($step < 5)); then
         step_make_install
-        if $single; then
+        if [ $single ]; then
             return 0
         fi
     fi
@@ -476,7 +483,7 @@ function process_steps() {
     # Step 5.
     if (($step < 6)); then
         step_virtualenv
-        if $single; then
+        if [ $single ]; then
             return 0
         fi
     fi
@@ -484,7 +491,7 @@ function process_steps() {
     # Step 6.
     if (($step < 7)); then
         step_other_tools
-        if $single; then
+        if [ $single ]; then
             return 0
         fi
     fi
@@ -495,7 +502,7 @@ function process_steps() {
 # Main #
 ########
 
-echo "You can:
+echo -n "You can:
 1. Start from the first step to build a clean python environment.
 2. Start from certain step to continue building.
 3. Run a single step only.
@@ -508,14 +515,28 @@ case $start_opt in
         process_steps 1
         ;;
     2)
-        echo -n "Which step do you want to start from? "
-        read step_number
+        while [ ! $step_number ]; do
+            echo -n "Which step do you want to start from? "
+            read step_number
+            if ! ((( $step_number )) && (( 1 <= $step_number && $step_number <= 3)));then
+                echo "Bad step number"
+                step_number=
+            fi
+        done
         process_steps $step_number
         ;;
     3)
+        while [ ! $step_number ]; do
+            echo -n "Which step do you want to start from? "
+            read step_number
+            if ! ((( $step_number )) && (( 1 <= $step_number && $step_number <= 3)));then
+                echo "Bad step number"
+                step_number=
+            fi
+        done
         process_steps $step_number single
         ;;
-    :)
+    *)
         echo "Wrong choice, exit"
         ;;
 esac
